@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nucleon Sandbox</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="toolbar">
+        <div class="tool-group" id="tool-buttons">
+          <button data-tool="proton" class="tool-button active">Proton</button>
+          <button data-tool="neutron" class="tool-button">Neutron</button>
+          <button data-tool="electron" class="tool-button">Electron</button>
+          <button data-tool="orbiting-electron" class="tool-button">Orbiting Electron</button>
+          <button data-tool="delete" class="tool-button">Delete</button>
+        </div>
+        <div class="controls-group">
+          <label class="toggle">
+            <input type="checkbox" id="orbit-assist-toggle" checked />
+            <span>Orbit Assist</span>
+          </label>
+          <button id="pause-button" class="control-button">Pause</button>
+          <button id="step-button" class="control-button">Step</button>
+          <button id="reset-button" class="control-button">Reset</button>
+          <select id="preset-select" class="control-select"></select>
+          <button id="load-preset" class="control-button">Load Preset</button>
+        </div>
+      </header>
+      <main class="main">
+        <canvas id="sim-canvas" width="960" height="600"></canvas>
+        <div class="hud">
+          <div id="hud-fps">FPS: --</div>
+          <div id="hud-particles">Particles: 0</div>
+          <div class="hud-row">
+            <label class="toggle">
+              <input type="checkbox" id="overlay-velocity" />
+              <span>Velocity Vectors</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="overlay-accel" />
+              <span>Acceleration Vectors</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="overlay-com" />
+              <span>Cluster COM</span>
+            </label>
+          </div>
+        </div>
+        <div id="debug-panel" class="debug-panel hidden">
+          <h3>Debug Constants</h3>
+          <div id="debug-constants"></div>
+          <button id="reset-constants">Reset Constants</button>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>
