@@ -20,7 +20,7 @@ This project is a browser-based "Universe Sandbox" for nucleons and electrons. T
    flask --app app run
    ```
 
-   The simulator will be available at <http://127.0.0.1:5000>.
+   The simulator will be available at <http://127.0.0.1:5001>.
 
 ## Frontend overview
 
