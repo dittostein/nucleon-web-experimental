@@ -924,8 +924,11 @@ class UIController {
 
   handlePointerDown(ev) {
     const rect = this.canvas.getBoundingClientRect();
-    const x = ev.clientX - rect.left;
-    const y = ev.clientY - rect.top;
+    if (rect.width === 0 || rect.height === 0) return;
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    const x = (ev.clientX - rect.left) * scaleX;
+    const y = (ev.clientY - rect.top) * scaleY;
     if (this.currentTool === Tool.DELETE) {
       this.deleteAt(x, y);
       this.deleteInterval = setInterval(() => this.deleteAt(x, y), 120);
@@ -943,8 +946,11 @@ class UIController {
   handlePointerMove(ev) {
     if (!this.dragState.active) return;
     const rect = this.canvas.getBoundingClientRect();
-    this.dragState.currentX = ev.clientX - rect.left;
-    this.dragState.currentY = ev.clientY - rect.top;
+    if (rect.width === 0 || rect.height === 0) return;
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    this.dragState.currentX = (ev.clientX - rect.left) * scaleX;
+    this.dragState.currentY = (ev.clientY - rect.top) * scaleY;
   }
 
   handlePointerUp(ev) {
@@ -954,8 +960,14 @@ class UIController {
     }
     if (!this.dragState.active) return;
     const rect = this.canvas.getBoundingClientRect();
-    const releaseX = ev ? ev.clientX - rect.left : this.dragState.startX;
-    const releaseY = ev ? ev.clientY - rect.top : this.dragState.startY;
+    const scaleX = rect.width === 0 ? 1 : this.canvas.width / rect.width;
+    const scaleY = rect.height === 0 ? 1 : this.canvas.height / rect.height;
+    const releaseX = ev
+      ? (ev.clientX - rect.left) * scaleX
+      : this.dragState.startX;
+    const releaseY = ev
+      ? (ev.clientY - rect.top) * scaleY
+      : this.dragState.startY;
     const dx = releaseX - this.dragState.startX;
     const dy = releaseY - this.dragState.startY;
     const speedScale = this.system.constants.spawn.k_drag;
@@ -1057,10 +1069,23 @@ function main() {
   const canvas = document.getElementById("sim-canvas");
   const bounds = { width: canvas.width, height: canvas.height };
   const system = new ParticleSystem(DEFAULT_CONSTANTS, bounds);
+  const syncCanvasSize = () => {
+    const displayWidth = Math.floor(canvas.clientWidth || canvas.width);
+    const displayHeight = Math.floor(canvas.clientHeight || canvas.height);
+    if (!displayWidth || !displayHeight) return;
+    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+      canvas.width = displayWidth;
+      canvas.height = displayHeight;
+    }
+    system.bounds.width = canvas.width;
+    system.bounds.height = canvas.height;
+  };
+  syncCanvasSize();
   const flashes = new FlashManager();
   const orbitManager = new OrbitManager(system);
   const renderer = new Renderer(canvas, system, flashes, orbitManager);
   const ui = new UIController(system, renderer, orbitManager, flashes);
+  window.addEventListener("resize", syncCanvasSize);
   requestAnimationFrame(() => ui.tick());
 }
 
