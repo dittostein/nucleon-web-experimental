@@ -348,18 +348,51 @@ class ParticleSystem {
           const ayi = this.ay[i];
           this.vx[i] += 0.5 * (axiPrev + axi) * dtSub;
           this.vy[i] += 0.5 * (ayiPrev + ayi) * dtSub;
-          this.vx[i] *= dragFactor;
-          this.vy[i] *= dragFactor;
 
+          let assist = null;
           if (etaSub > 0) {
-            const assist = orbitManager.computeAssist(i);
-            if (assist) {
-              const targetVx = assist.targetVx * this.orbitChirality;
-              const targetVy = assist.targetVy * this.orbitChirality;
-              this.vx[i] = (1 - etaSub) * this.vx[i] + etaSub * targetVx;
-              this.vy[i] = (1 - etaSub) * this.vy[i] + etaSub * targetVy;
+            assist = orbitManager.computeAssist(i);
+          }
+
+          let nextVx = this.vx[i];
+          let nextVy = this.vy[i];
+          if (!assist) {
+            nextVx *= dragFactor;
+            nextVy *= dragFactor;
+          }
+
+          if (assist && etaSub > 0) {
+            const targetVx = assist.targetVx * this.orbitChirality;
+            const targetVy = assist.targetVy * this.orbitChirality;
+            nextVx = (1 - etaSub) * nextVx + etaSub * targetVx;
+            nextVy = (1 - etaSub) * nextVy + etaSub * targetVy;
+
+            const targetMag = Math.hypot(targetVx, targetVy);
+            if (targetMag > 0) {
+              const tHatX = targetVx / targetMag;
+              const tHatY = targetVy / targetMag;
+              let tangential = nextVx * tHatX + nextVy * tHatY;
+              if (tangential < 0) tangential = 0;
+              nextVx = tHatX * tangential;
+              nextVy = tHatY * tangential;
+
+              const desiredSpeed = assist.speed;
+              if (desiredSpeed > 0) {
+                const currentSpeed = Math.hypot(nextVx, nextVy);
+                if (currentSpeed > 0) {
+                  const scale = desiredSpeed / currentSpeed;
+                  nextVx *= scale;
+                  nextVy *= scale;
+                } else {
+                  nextVx = tHatX * desiredSpeed;
+                  nextVy = tHatY * desiredSpeed;
+                }
+              }
             }
           }
+
+          this.vx[i] = nextVx;
+          this.vy[i] = nextVy;
 
           oldAx[i] = axi;
           oldAy[i] = ayi;
