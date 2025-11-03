@@ -115,6 +115,27 @@ const RADII = {
 
 const OUTLINE_COLOR = "rgba(255,255,255,0.25)";
 
+const SUPPORTS_PASSIVE_EVENTS = (() => {
+  if (typeof window === "undefined" || !window.addEventListener) {
+    return false;
+  }
+  let supported = false;
+  try {
+    const noop = () => {};
+    const opts = Object.defineProperty({}, "passive", {
+      get() {
+        supported = true;
+        return false;
+      },
+    });
+    window.addEventListener("passive-check", noop, opts);
+    window.removeEventListener("passive-check", noop, opts);
+  } catch (err) {
+    supported = false;
+  }
+  return supported;
+})();
+
 class ParticleSystem {
   constructor(constants, bounds) {
     this.constants = JSON.parse(JSON.stringify(constants));
@@ -795,6 +816,8 @@ class UIController {
     this.accumulator = 0;
     this.lastTimestamp = performance.now();
     this.deleteInterval = null;
+    this.pointerPosition = null;
+    this.activePointerId = null;
 
     this.hudArrow = null;
 
@@ -845,10 +868,31 @@ class UIController {
       this.renderer.overlayCom = this.overlayComCheckbox.checked;
     });
 
-    this.canvas.addEventListener("mousedown", (ev) => this.handlePointerDown(ev));
-    window.addEventListener("mousemove", (ev) => this.handlePointerMove(ev));
-    window.addEventListener("mouseup", (ev) => this.handlePointerUp(ev));
-    this.canvas.addEventListener("mouseleave", () => this.handlePointerUp());
+    this.canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
+
+    if (window.PointerEvent) {
+      this.canvas.addEventListener("pointerdown", (ev) => this.handlePointerDown(ev));
+      this.canvas.addEventListener("pointermove", (ev) => this.handlePointerMove(ev));
+      this.canvas.addEventListener("pointerup", (ev) => this.handlePointerUp(ev));
+      this.canvas.addEventListener("pointercancel", (ev) => this.handlePointerUp(ev));
+      this.canvas.addEventListener("pointerleave", (ev) => this.handlePointerUp(ev));
+    } else {
+      this.canvas.addEventListener("mousedown", (ev) => this.handlePointerDown(ev));
+      window.addEventListener("mousemove", (ev) => this.handlePointerMove(ev));
+      window.addEventListener("mouseup", (ev) => this.handlePointerUp(ev));
+      this.canvas.addEventListener("mouseleave", () => this.handlePointerUp());
+
+      const touchOptions = SUPPORTS_PASSIVE_EVENTS ? { passive: false } : false;
+      this.canvas.addEventListener(
+        "touchstart",
+        (ev) => this.handlePointerDown(ev),
+        touchOptions
+      );
+      const moveTarget = window;
+      moveTarget.addEventListener("touchmove", (ev) => this.handlePointerMove(ev), touchOptions);
+      moveTarget.addEventListener("touchend", (ev) => this.handlePointerUp(ev), touchOptions);
+      moveTarget.addEventListener("touchcancel", (ev) => this.handlePointerUp(ev), touchOptions);
+    }
 
     this.resetConstantsButton.addEventListener("click", () => {
       this.resetConstants();
@@ -947,6 +991,110 @@ class UIController {
     });
   }
 
+  getPointerIdFromEvent(ev, preferChanged = false) {
+    if (!ev) return "mouse";
+    if (typeof ev.pointerId !== "undefined") {
+      return ev.pointerId;
+    }
+
+    const lists = [];
+    if (preferChanged && ev.changedTouches && ev.changedTouches.length > 0) {
+      lists.push(ev.changedTouches);
+    }
+    if (ev.touches && ev.touches.length > 0) {
+      lists.push(ev.touches);
+    }
+    if (!preferChanged && ev.changedTouches && ev.changedTouches.length > 0) {
+      lists.push(ev.changedTouches);
+    }
+
+    for (const list of lists) {
+      if (list && list.length > 0) {
+        return list[0].identifier;
+      }
+    }
+
+    return "mouse";
+  }
+
+  getTouchFromList(touchList) {
+    if (!touchList || touchList.length === 0) return null;
+    if (this.activePointerId === null) {
+      return touchList[0];
+    }
+    for (let i = 0; i < touchList.length; i++) {
+      if (touchList[i].identifier === this.activePointerId) {
+        return touchList[i];
+      }
+    }
+    return touchList[0];
+  }
+
+  getTouchFromEvent(ev) {
+    if (!ev) return null;
+    if (ev.changedTouches && ev.changedTouches.length > 0) {
+      const touch = this.getTouchFromList(ev.changedTouches);
+      if (touch) return touch;
+    }
+    if (ev.touches && ev.touches.length > 0) {
+      return this.getTouchFromList(ev.touches);
+    }
+    return null;
+  }
+
+  eventMatchesActivePointer(ev) {
+    if (this.activePointerId === null) return true;
+    if (!ev) return true;
+    if (this.activePointerId === "mouse") {
+      return true;
+    }
+    if (typeof ev.pointerId !== "undefined") {
+      return ev.pointerId === this.activePointerId;
+    }
+    if (ev.changedTouches && ev.changedTouches.length > 0) {
+      for (let i = 0; i < ev.changedTouches.length; i++) {
+        if (ev.changedTouches[i].identifier === this.activePointerId) {
+          return true;
+        }
+      }
+    }
+    if (ev.touches && ev.touches.length > 0) {
+      for (let i = 0; i < ev.touches.length; i++) {
+        if (ev.touches[i].identifier === this.activePointerId) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  getRelativePointerPosition(ev) {
+    if (!ev) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+
+    let clientX;
+    let clientY;
+
+    if (typeof ev.clientX === "number" && typeof ev.clientY === "number") {
+      clientX = ev.clientX;
+      clientY = ev.clientY;
+    } else {
+      const touch = this.getTouchFromEvent(ev);
+      if (!touch) return null;
+      clientX = touch.clientX;
+      clientY = touch.clientY;
+    }
+
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  }
+
   computeOrbitTarget(x, y) {
     const helper = new OrbitManager(this.system);
     helper.updateClusters();
@@ -956,15 +1104,38 @@ class UIController {
   }
 
   handlePointerDown(ev) {
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
-    const x = (ev.clientX - rect.left) * scaleX;
-    const y = (ev.clientY - rect.top) * scaleY;
+    if (ev && typeof ev.preventDefault === "function") {
+      ev.preventDefault();
+    }
+
+    const pointerId = this.getPointerIdFromEvent(ev, true);
+    if (this.activePointerId !== null && this.activePointerId !== pointerId) {
+      return;
+    }
+    this.activePointerId = pointerId;
+
+    const pos = this.getRelativePointerPosition(ev);
+    if (!pos) {
+      this.activePointerId = null;
+      return;
+    }
+    const { x, y } = pos;
+    this.pointerPosition = { x, y };
+
+    if (ev && this.canvas.setPointerCapture && ev.pointerId !== undefined) {
+      try {
+        this.canvas.setPointerCapture(ev.pointerId);
+      } catch (err) {
+        // Ignore capture errors (e.g., unsupported pointers)
+      }
+    }
+
     if (this.currentTool === Tool.DELETE) {
       this.deleteAt(x, y);
-      this.deleteInterval = setInterval(() => this.deleteAt(x, y), 120);
+      this.deleteInterval = setInterval(() => {
+        const target = this.pointerPosition || { x, y };
+        this.deleteAt(target.x, target.y);
+      }, 120);
       return;
     }
     this.dragState.active = true;
@@ -977,30 +1148,62 @@ class UIController {
   }
 
   handlePointerMove(ev) {
+    if (ev && typeof ev.preventDefault === "function") {
+      ev.preventDefault();
+    }
+
+    if (ev && !this.eventMatchesActivePointer(ev)) {
+      return;
+    }
+
+    const pos = this.getRelativePointerPosition(ev);
+    if (!pos) return;
+    this.pointerPosition = { x: pos.x, y: pos.y };
+
     if (!this.dragState.active) return;
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    const scaleX = this.canvas.width / rect.width;
-    const scaleY = this.canvas.height / rect.height;
-    this.dragState.currentX = (ev.clientX - rect.left) * scaleX;
-    this.dragState.currentY = (ev.clientY - rect.top) * scaleY;
+    this.dragState.currentX = pos.x;
+    this.dragState.currentY = pos.y;
   }
 
   handlePointerUp(ev) {
+    if (ev && typeof ev.preventDefault === "function") {
+      ev.preventDefault();
+    }
+
+    if (ev && !this.eventMatchesActivePointer(ev)) {
+      return;
+    }
+
     if (this.deleteInterval) {
       clearInterval(this.deleteInterval);
       this.deleteInterval = null;
     }
-    if (!this.dragState.active) return;
-    const rect = this.canvas.getBoundingClientRect();
-    const scaleX = rect.width === 0 ? 1 : this.canvas.width / rect.width;
-    const scaleY = rect.height === 0 ? 1 : this.canvas.height / rect.height;
-    const releaseX = ev
-      ? (ev.clientX - rect.left) * scaleX
-      : this.dragState.startX;
-    const releaseY = ev
-      ? (ev.clientY - rect.top) * scaleY
-      : this.dragState.startY;
+
+    if (ev && this.canvas.releasePointerCapture && ev.pointerId !== undefined) {
+      try {
+        this.canvas.releasePointerCapture(ev.pointerId);
+      } catch (err) {
+        // Ignore release errors to avoid disrupting input flow
+      }
+    }
+
+    const pos = ev ? this.getRelativePointerPosition(ev) : null;
+    if (pos) {
+      this.pointerPosition = { x: pos.x, y: pos.y };
+    }
+
+    if (!this.dragState.active) {
+      this.pointerPosition = null;
+      this.activePointerId = null;
+      return;
+    }
+
+    const release = this.pointerPosition || {
+      x: this.dragState.startX,
+      y: this.dragState.startY,
+    };
+    const releaseX = release.x;
+    const releaseY = release.y;
     const dx = releaseX - this.dragState.startX;
     const dy = releaseY - this.dragState.startY;
     const speedScale = this.system.constants.spawn.k_drag;
@@ -1012,6 +1215,8 @@ class UIController {
 
     this.spawnParticle(this.dragState.startX, this.dragState.startY, vx, vy);
     this.dragState.active = false;
+    this.pointerPosition = null;
+    this.activePointerId = null;
   }
 
   spawnParticle(x, y, vx, vy) {
